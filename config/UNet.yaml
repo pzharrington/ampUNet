@@ -33,8 +33,8 @@ multi8:
 cosmo:
   <<: *base
   data_loader_config: 'lowmem'
-  train_path: '/global/cscratch1/sd/pharring/nbody2hydro/datacopies/normalized1024_z3_alt_bigcrop_transp.h5'
-  val_path: '/global/cscratch1/sd/pharring/nbody2hydro/datacopies/normalized1024_z3_alt_bigcrop2_transp.h5'
+  train_path: '/raid/tkurth/ampUnet/normalized1024_z3_alt_bigcrop_transp.h5'
+  val_path: '/raid/tkurth/ampUnet/normalized1024_z3_alt_bigcrop2_transp.h5'
   use_cache: None # '/tmp/'
   Nsamples: 1000
   Nsamples_val: 64
@@ -43,8 +43,8 @@ cosmo:
 cosmo_small:
   <<: *base
   data_loader_config: 'lowmem'
-  train_path: '/global/cscratch1/sd/pharring/nbody2hydro/datacopies/normalized1024_z3_alt_bigcrop_transp.h5'
-  val_path: '/global/cscratch1/sd/pharring/nbody2hydro/datacopies/normalized1024_z3_alt_bigcrop2_transp.h5'
+  train_path: '/raid/tkurth/ampUnet/normalized1024_z3_alt_bigcrop_transp.h5'
+  val_path: '/raid/tkurth/ampUnet/normalized1024_z3_alt_bigcrop2_transp.h5'
   use_cache: None #'/tmp/'
   data_size: 128
   Nsamples: 1000
