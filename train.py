@@ -18,6 +18,7 @@ from utils.YParams import YParams
 from utils import get_data_loader_distributed
 from networks import UNet
 
+import apex.optimizers as aoptim
 
 def train(params, args, world_rank):
   logging.info('rank %d, begin data loader init'%world_rank)
@@ -34,8 +35,14 @@ def train(params, args, world_rank):
   # NDHWC:
   if params.enable_ndhwc:
     model = model.to(memory_format=torch.channels_last_3d)
-  
-  optimizer = optim.Adam(model.parameters(), lr = params.lr)
+
+  # select optimizer
+  if params.enable_apex:
+    optimizer = aoptim.FusedAdam(model.parameters(), lr = params.lr,
+                                 adam_w_mode=False, set_grad_none=True)
+  else:
+    optimizer = optim.Adam(model.parameters(), lr = params.lr)
+    
   if params.enable_amp:
     scaler = GradScaler()
 
