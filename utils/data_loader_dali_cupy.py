@@ -113,7 +113,7 @@ class DaliInputIterator(object):
         torch.cuda.nvtx.range_push("DaliInputIterator:get_batch")
 
         # generate coordinates
-        coords = self.rng.randint(low=0, high=self.length-self.size, size=(self.batch_size, 3))
+        coords = self.rng.randint(low=0, high=self.length-self.size, size=(self.batch_size, 3), dtype=np.int32)
         
         # read
         for batch_id in range(self.batch_size):

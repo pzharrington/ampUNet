@@ -9,6 +9,7 @@ base: &base
   num_epochs: 2
   enable_amp: False
   enable_ndhwc: False
+  enable_apex: False
   ngpu: 1
   expdir: '/results'
 
@@ -21,8 +22,7 @@ base: &base
   train_path: None
   val_path: None
   use_cache: None # set this to a cache dir (e.g., NVMe on CoriGPU) if you copied data there
-  Nsamples: 20
-  Nsamples_val: 20
+
 
 withAMP:
   <<: *base
@@ -46,6 +46,10 @@ cosmo-AMP: &cosmo_amp
   <<: *cosmo
   enable_amp: True
 
+cosmo-AMP-APEX:
+  <<: *cosmo_amp
+  enable_apex: True
+
 cosmo-AMP-NDHWC:
   <<: *cosmo_amp
   enable_ndhwc: True
@@ -60,12 +64,36 @@ cosmo-dali: &cosmo_dali
   Nsamples_val: 64
   num_epochs: 5
 
-cosmo-dali-AMP: &cosmo_dali_AMP
+cosmo-dali-AMP: &cosmo_dali_amp
   <<: *cosmo_dali
   enable_amp: True
 
+cosmo-dali-AMP-APEX:
+  <<: *cosmo_dali_amp
+  enable_apex: True
+    
 cosmo-dali-AMP-NDHWC:
-  <<: *cosmo_dali_AMP
+  <<: *cosmo_dali_amp
+  enable_ndhwc: True
+
+cosmo-dali-lomem: &cosmo_dali_lomem
+  <<: *base
+  data_loader_config: 'dali-lomem'
+  train_path: '/data/normalized1024_z3_alt_bigcrop_data.npy'
+  train_path_label: '/data/normalized1024_z3_alt_bigcrop_label.npy'
+  val_path: '/data/normalized1024_z3_alt_bigcrop2_data.npy'
+  val_path_label: '/data/normalized1024_z3_alt_bigcrop2_label.npy'
+  use_cache: None # '/tmp/'
+  Nsamples: 100 #1000
+  Nsamples_val: 20 #64
+  num_epochs: 5
+
+cosmo-dali-lomem-AMP: &cosmo_dali_lomem_amp
+  <<: *cosmo_dali_lomem
+  enable_amp: True
+
+cosmo-dali-lomem-AMP-NDHWC:
+  <<: *cosmo_dali_lomem_amp
   enable_ndhwc: True
 
 cosmo_small:

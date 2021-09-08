@@ -19,6 +19,7 @@ from utils.YParams import YParams
 from utils import get_data_loader_distributed
 from networks import UNet
 
+import apex.optimizers as aoptim
 
 def cosine_schedule(optimizer, iternum, start_lr=1e-4, tot_steps=1000, end_lr=0., warmup_steps=0): 
   if iternum<warmup_steps:
@@ -41,12 +42,17 @@ def train(params, args, world_rank):
   # NDHWC:
   if params.enable_ndhwc:
     model = model.to(memory_format=torch.channels_last_3d)
-  
+
   if params.enable_amp:
     scaler = GradScaler()
   if params.distributed:
     model = DistributedDataParallel(model, device_ids=[args.local_rank])
-  optimizer = optim.Adam(model.parameters(), lr = params.lr_schedule['start_lr'])
+
+  if params.enable_apex:
+    optimizer = aoptim.FusedAdam(model.parameters(), lr = params.lr_schedule['start_lr'],
+                                 adam_w_mode=False, set_grad_none=True)
+  else:
+    optimizer = optim.Adam(model.parameters(), lr = params.lr_schedule['start_lr'])
 
   iters = 0
   startEpoch = 0
