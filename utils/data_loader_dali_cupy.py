@@ -14,11 +14,14 @@ import nvidia.dali.fn as fn
 import nvidia.dali.types as types
 from nvidia.dali.plugin.pytorch import DALIGenericIterator, LastBatchPolicy
 
+# O(8) transformations
+from .symmetry import get_isomorphism_axes_angle
+
 
 def get_data_loader_distributed(params, world_rank, device_id = 0):
     train_loader = DaliDataLoader(params, params.train_path, params.Nsamples, num_workers=params.num_data_workers, device_id=device_id)
-    validation_loader = DaliDataLoader(params, params.validation_path, params.Nsamples_val, num_workers=params.num_data_workers, device_id=device_id)
-    return train_loader
+    validation_loader = DaliDataLoader(params, params.val_path, params.Nsamples_val, num_workers=params.num_data_workers, device_id=device_id)
+    return train_loader, validation_loader
 
 
 class DaliInputIterator(object):
@@ -61,10 +64,10 @@ class DaliInputIterator(object):
         self.size = params.data_size
 
         # shapes
-        self.inp_shape_full = (4, self.length, self.length, self.length)
-        self.tar_shape_full = (5, self.length, self.length, self.length) 
-        self.inp_shape = (4, self.size, self.size, self.size)
-        self.tar_shape = (5, self.size, self.size, self.size)
+        self.inp_shape_full = (self.length, self.length, self.length, 4)
+        self.tar_shape_full = (self.length, self.length, self.length, 5) 
+        self.inp_shape = (self.size, self.size, self.size, 4)
+        self.tar_shape = (self.size, self.size, self.size, 5)
         
         # CPU
         self.inp_buff_cpu = self.pin(np.zeros((self.batch_size,) + self.inp_shape, dtype=np.float32))
@@ -87,15 +90,18 @@ class DaliInputIterator(object):
         # thread pool
         self.executor = cf.ThreadPoolExecutor(max_workers = 2)
         
-        # submit data fetch
+        # set start buffer
         self.curr_buff = 0
-        buff_ind = self.curr_buff
-        self.future = self.executor.submit(self.get_batch, buff_ind)
 
         
     def __iter__(self):
+        # reset counter
         self.i = 0
-        self.rng.shuffle(self.indices)
+        
+        # submit first batch in epoch:
+        buff_ind = self.curr_buff
+        self.future = self.executor.submit(self.get_batch, buff_ind)
+        
         return self
         
 
@@ -116,9 +122,9 @@ class DaliInputIterator(object):
             x, y, z = coords[batch_id, 0], coords[batch_id, 1], coords[batch_id, 2]
         
             # inp
-            self.fields_tilde.read_direct(self.inp_buff_cpu,
-                                          np.s_[0:4, x:x+self.size, y:y+self.size, z:z+self.size],
-                                          np.s_[0:4, 0:self.size, 0:self.size, 0:self.size])
+            self.fields_inp.read_direct(self.inp_buff_cpu,
+                                        np.s_[x:x+self.size, y:y+self.size, z:z+self.size, 0:4],
+                                        np.s_[batch_id:batch_id+1, 0:self.size, 0:self.size, 0:self.size, 0:4])
                 
         # upload
         self.inp_buff_gpu[buff_id].set(self.inp_buff_cpu, self.stream_htod)
@@ -130,9 +136,9 @@ class DaliInputIterator(object):
             x, y, z = coords[batch_id, 0], coords[batch_id, 1], coords[batch_id, 2]
 
             # target
-            self.fields_hr.read_direct(self.tar_buff_cpu,
-                                       np.s_[0:5, x:x+self.size, y:y+self.size, z:z+self.size],
-                                       np.s_[0:5, 0:self.size, 0:self.size, 0:self.size])
+            self.fields_tar.read_direct(self.tar_buff_cpu,
+                                        np.s_[x:x+self.size, y:y+self.size, z:z+self.size, 0:5],
+                                        np.s_[batch_id:batch_id+1, 0:self.size, 0:self.size, 0:self.size, 0:5])
                     
         # upload
         self.tar_buff_gpu[buff_id].set(self.tar_buff_cpu, self.stream_htod)
@@ -192,21 +198,64 @@ class DaliDataLoader(object):
 
         with pipeline:
             data, label = fn.external_source(source = dii,
+                                             device = "gpu",
                                              num_outputs = 2,
                                              cycle = "raise",
+                                             layout = ["DHWC", "DHWC"],
                                              no_copy = True,
                                              parallel = False)
 
+            # get random numbers
+            axes, angles = fn.external_source(source = lambda x: get_isomorphism_axes_angle(dii.rng, params.batch_size),
+                                              device = "cpu",
+                                              num_outputs = 2,
+                                              no_copy = False,
+                                              parallel = False)
+            
             # copy to gpu: not necessary
-            #data = data.gpu()
-            #label = label.gpu()
+            data_rot = fn.rotate(data,
+                                 device = "gpu",
+                                 angle = angles,
+                                 axis = axes)
 
-            # return
-            pipeline.set_outputs(data, label)
+            label_rot = fn.rotate(label,
+                                  device = "gpu",
+                                  angle = angles,
+                                  axis = axes)
+
+
+            if params.enable_ndhwc:
+                # no need to do anything, just wrap up
+                pipeline.set_outputs(data_rot, label_rot)
+            else:
+                # a final transposition
+                data_out = fn.transpose(data_rot,
+                                        device = "gpu",
+                                        perm = [3, 0, 1, 2])
+            
+                label_out = fn.transpose(label_rot,
+                                         device = "gpu",
+                                         perm = [3, 0, 1, 2]) 
+        
+                pipeline.set_outputs(data_out, label_out)
 
         return pipeline
+
     
     def __init__(self, params, data_file, num_samples, num_workers=1, device_id=0):
+
+        # extract relevant parameters
+        self.enable_ndhwc = params.enable_ndhwc
+        self.batch_size = params.batch_size
+        self.size = params.data_size
+
+        # shape gymnastics
+        N, D, H, W = self.batch_size, self.size, self.size, self.size
+        self.inp_shape = [N, 4, D, H, W]
+        self.tar_shape = [N, 5, D, H, W]
+        self.inp_strides = [ D*H*W*4, 1, H*W*4, W*4, 4]
+        self.tar_strides = [ D*H*W*5, 1, H*W*5, W*5, 5]
+        
         # construct pipeline
         self.pipe = self.get_pipeline(params, data_file, num_samples, num_workers, device_id)
         self.pipe.build()
@@ -216,6 +265,8 @@ class DaliDataLoader(object):
                                             last_batch_policy = LastBatchPolicy.PARTIAL,
                                             auto_reset = True,
                                             prepare_first_batch = True)
+
+        self.length = num_samples
         
     def __len__(self):
         return self.length
@@ -224,4 +275,10 @@ class DaliDataLoader(object):
         for token in self.iterator:
             inp = token[0]['inp']
             tar = token[0]['tar']
+
+            if self.enable_ndhwc:
+                # the data is in NDHWC already, we just need to make sure torch understands it:
+                inp = torch.as_strided(inp, size=self.inp_shape, stride=self.inp_strides)
+                tar = torch.as_strided(tar, size=self.tar_shape, stride=self.tar_strides)
+            
             yield inp, tar

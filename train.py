@@ -16,7 +16,7 @@ import logging
 from utils import logging_utils
 logging_utils.config_logger()
 from utils.YParams import YParams
-from utils.data_loader import get_data_loader_distributed
+from utils import get_data_loader_distributed
 from networks import UNet
 
 
@@ -33,12 +33,15 @@ def train(params, args, world_rank):
   train_data_loader, val_data_loader = get_data_loader_distributed(params, world_rank)
   logging.info('rank %d, data loader initialized with config %s'%(world_rank, params.data_loader_config))
 
-
   device = torch.device('cuda:%d'%args.local_rank)
 
   model = UNet.UNet(params).to(device)
   model.apply(model.get_weights_function(params.weight_init))
 
+  # NDHWC:
+  if params.enable_ndhwc:
+    model = model.to(memory_format=torch.channels_last_3d)
+  
   if params.enable_amp:
     scaler = GradScaler()
   if params.distributed:
@@ -65,7 +68,7 @@ def train(params, args, world_rank):
       optimizer.zero_grad()
       with autocast(params.enable_amp):
         gen = model(inp)
-        loss = UNet.loss_func(gen, tar, params)
+        loss = UNet.loss_func(gen, tar, params.lambda_rho)
 
       if params.enable_amp:
         scaler.scale(loss).backward()
@@ -103,7 +106,7 @@ def train(params, args, world_rank):
       optimizer.zero_grad()
       with autocast(params.enable_amp):
         gen = model(inp)
-        loss = UNet.loss_func(gen, tar, params)
+        loss = UNet.loss_func(gen, tar, params.lambda_rho)
         tr_loss.append(loss.item())
 
       if params.enable_amp:
@@ -137,7 +140,7 @@ def train(params, args, world_rank):
           with torch.no_grad():
             inp, tar = map(lambda x: x.to(device), data)
             gen = model(inp)
-            loss = UNet.loss_func(gen, tar, params)
+            loss = UNet.loss_func(gen, tar, params.lambda_rho)
             val_loss.append(loss.item())
       val_end = time.time()
       logging.info('  Avg val loss=%f'%np.mean(val_loss))
@@ -176,6 +179,8 @@ if __name__ == '__main__':
     torch.distributed.init_process_group(backend='nccl',
                                          init_method='env://')
     world_rank = torch.distributed.get_rank() 
+  else:
+    torch.cuda.set_device(0)
 
   torch.backends.cudnn.benchmark = True
 

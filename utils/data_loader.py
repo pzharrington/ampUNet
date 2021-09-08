@@ -76,6 +76,7 @@ class RandomCropDataset(Dataset):
         self.Nsamples = params.Nsamples if not validation else params.Nsamples_val
         self.rotate = RandomRotator()
         self.inmem = params.data_loader_config == 'inmem'
+        self.enable_ndhwc = params.enable_ndhwc
         
         self.inp_buff = np.zeros((4, self.size, self.size, self.size), dtype=np.float32)
         self.tar_buff = np.zeros((5, self.size, self.size, self.size), dtype=np.float32)
@@ -112,7 +113,17 @@ class RandomCropDataset(Dataset):
         rand = np.random.randint(low=1, high=25)
         inp = np.copy(self.rotate(self.inp_buff, rand))
         tar = np.copy(self.rotate(self.tar_buff, rand))
-        return torch.as_tensor(inp), torch.as_tensor(tar)
+
+        # convert to tensor
+        inp_t = torch.as_tensor(inp)
+        tar_t = torch.as_tensor(tar)
+
+        # convert to ndhwc if requested
+        if self.enable_ndhwc:
+            inp_t = inp_t.contiguous(memory_format=torch.channels_last_3d)
+            tar_t = tar_t.contiguous(memory_format=torch.channels_last_3d)
+        
+        return inp_t, tar_t
 
 
 class RandomRotator(object):

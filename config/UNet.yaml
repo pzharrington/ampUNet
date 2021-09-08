@@ -8,11 +8,12 @@ base: &base
   batch_size: 1
   num_epochs: 2
   enable_amp: False
+  enable_ndhwc: False
   ngpu: 1
-  expdir: '/global/cscratch1/sd/pharring/nbody2hydro/sc21/expts/'
+  expdir: '/results'
 
   # Data
-  data_loader_config: 'synthetic' # choices: 'synthetic', 'inmem', or 'lowmem'
+  data_loader_config: 'synthetic' # choices: 'synthetic', 'inmem', 'lowmem', 'dali-inmem'
   box_size: [1024, 1024] # total size of simulation boxes (train, validation) 
   data_size: 256 # size of crops for training
   num_data_workers: 2 # number of dataloader worker threads per proc
@@ -39,10 +40,35 @@ cosmo: &cosmo
   use_cache: '/tmp/'
   Nsamples: 1000
   Nsamples_val: 64
-  num_epochs: 20
-  batch_size: 1 
+  num_epochs: 5
 
-cosmo_small: &cosmo_small
+cosmo-AMP: &cosmo_amp
+  <<: *cosmo
+  enable_amp: True
+
+cosmo-AMP-NDHWC:
+  <<: *cosmo_amp
+  enable_ndhwc: True
+
+cosmo-dali: &cosmo_dali
+  <<: *base
+  data_loader_config: 'dali-inmem'
+  train_path: '/global/cscratch1/sd/pharring/nbody2hydro/datacopies/normalized1024_z3_alt_bigcrop_transp.h5'
+  val_path: '/global/cscratch1/sd/pharring/nbody2hydro/datacopies/normalized1024_z3_alt_bigcrop2_transp.h5'
+  use_cache: '/tmp/'
+  Nsamples: 1000
+  Nsamples_val: 64
+  num_epochs: 5
+
+cosmo-dali-AMP: &cosmo_dali_AMP
+  <<: *cosmo_dali
+  enable_amp: True
+
+cosmo-dali-AMP-NDHWC:
+  <<: *cosmo_dali_AMP
+  enable_ndhwc: True
+
+cosmo_small:
   <<: *base
   data_loader_config: 'lowmem'
   train_path: '/global/cscratch1/sd/pharring/nbody2hydro/datacopies/normalized1024_z3_alt_bigcrop_transp.h5'

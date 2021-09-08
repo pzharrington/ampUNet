@@ -18,7 +18,8 @@ def inverse_transf(x):
     return torch.exp(14.*x)
 
 
-def loss_func(gen_output, target, params):
+@torch.jit.script
+def loss_func(gen_output, target, lambda_rho: float):
     l1_loss = nn.functional.l1_loss(gen_output, target)
 
     if params.lambda_rho == 0.:
@@ -28,7 +29,7 @@ def loss_func(gen_output, target, params):
     orig_gen = inverse_transf(gen_output[:,0,:,:,:])
     orig_tar = inverse_transf(target[:,0,:,:,:])
     orig_l1_loss = nn.functional.l1_loss(orig_gen, orig_tar)
-    return l1_loss + params.lambda_rho*orig_l1_loss
+    return l1_loss + lambda_rho * orig_l1_loss
 
 
 
