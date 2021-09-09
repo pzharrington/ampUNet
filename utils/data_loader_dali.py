@@ -73,6 +73,9 @@ class DaliDataLoader(object):
                                               no_copy = False,
                                               parallel = False)
             
+            flip = fn.random.coin_flip(device = 'cpu',
+                                       shape=(3))
+            
             # copy to gpu: not necessary
             data_rot = fn.rotate(data,
                                  device = "gpu",
@@ -84,7 +87,19 @@ class DaliDataLoader(object):
                                   angle = angles,
                                   axis = axes)
 
+            # flip
+            data_rot = fn.flip(data_rot,
+                               device = 'gpu',
+                               depthwise = flip[0],
+                               horizontal = flip[1],
+                               vertical = flip[2])
 
+            label_rot = fn.flip(label_rot,
+                                device = 'gpu',
+                                depthwise = flip[0],
+                                horizontal = flip[1],
+                                vertical = flip[2])
+            
             if params.enable_ndhwc:
                 # no need to do anything, just wrap up
                 pipeline.set_outputs(data_rot, label_rot)

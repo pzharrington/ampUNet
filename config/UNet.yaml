@@ -92,6 +92,10 @@ cosmo-dali-lomem-AMP: &cosmo_dali_lomem_amp
   <<: *cosmo_dali_lomem
   enable_amp: True
 
+cosmo-dali-lomem-AMP-APEX:
+  <<: *cosmo_dali_lomem_amp
+  enable_apex: True
+
 cosmo-dali-lomem-AMP-NDHWC:
   <<: *cosmo_dali_lomem_amp
   enable_ndhwc: True
@@ -204,3 +208,23 @@ A100_crop96_128GPU:
   ngpu: 128
   lambda_rho: 0.
 
+cosmo_small-dali-lomem: &cosmo_small_dali_lomem
+  <<: *base
+  data_loader_config: 'dali-lomem'
+  train_path: '/data/normalized1024_z3_alt_bigcrop_data.npy'
+  train_path_label: '/data/normalized1024_z3_alt_bigcrop_label.npy'
+  val_path: '/data/normalized1024_z3_alt_bigcrop2_data.npy'
+  val_path_label: '/data/normalized1024_z3_alt_bigcrop2_label.npy'
+  use_cache: None # '/tmp/'
+  data_size: 128
+  Nsamples: 1000
+  Nsamples_val: 256
+  num_epochs: 20
+
+cosmo_small-dali-lomem-AMP: &cosmo_small_dali_lomem_amp
+  <<: *cosmo_small_dali_lomem
+  enable_amp: True
+
+cosmo_small-dali-lomem-AMP-APEX:
+  <<: *cosmo_small_dali_lomem_amp
+  enable_apex: True
