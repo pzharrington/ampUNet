@@ -23,6 +23,15 @@ base: &base
   use_cache: None # set this to a cache dir (e.g., NVMe on CoriGPU) if you copied data there
 
 
+base_small-AMP:
+  <<: *base
+  data_size: 128
+  enable_amp: True
+  num_epochs: 1
+  Nsamples: 10
+  Nsamples_val: 2
+
+
 withAMP:
   <<: *base
   enable_amp: True
@@ -66,6 +75,12 @@ cosmo-dali: &cosmo_dali
 cosmo-dali-AMP: &cosmo_dali_amp
   <<: *cosmo_dali
   enable_amp: True
+
+cosmo-dali-AMP-profile:
+  <<: *cosmo_dali_amp
+  Nsamples: 10
+  Nsamples_val: 1
+  num_epochs: 1
 
 cosmo-dali-AMP-APEX:
   <<: *cosmo_dali_amp
