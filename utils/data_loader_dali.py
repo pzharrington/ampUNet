@@ -1,9 +1,7 @@
 import torch
 import numpy as np
-import cupy as cp
 from torch.utils.data import DataLoader, Dataset, DistributedSampler
 from torch import Tensor
-import h5py
 
 #concurrent futures
 import concurrent.futures as cf
@@ -20,6 +18,9 @@ from .symmetry import get_isomorphism_axes_angle
 
 def get_data_loader_distributed(params, world_rank, device_id = 0):
     train_loader = DaliDataLoader(params, params.train_path, params.train_path_label, params.Nsamples, num_workers=params.num_data_workers, device_id=device_id)
+    if params.enable_benchy:
+        from benchy.torch import BenchmarkGenericIteratorWrapper
+        train_loader = BenchmarkGenericIteratorWrapper(train_loader, params.batch_size)
     validation_loader = DaliDataLoader(params, params.val_path, params.val_path_label, params.Nsamples_val, num_workers=params.num_data_workers, device_id=device_id)
     return train_loader, validation_loader
 
