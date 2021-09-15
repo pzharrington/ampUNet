@@ -10,6 +10,7 @@ base: &base
   enable_amp: False
   enable_ndhwc: False
   enable_apex: False
+  enable_benchy: False
   ngpu: 1
   expdir: '/results'
 
@@ -115,7 +116,7 @@ cosmo-dali-lomem-AMP-NDHWC:
   <<: *cosmo_dali_lomem_amp
   enable_ndhwc: True
 
-cosmo_small:
+cosmo_small: &cosmo_small
   <<: *base
   data_loader_config: 'lowmem'
   train_path: '/global/cscratch1/sd/pharring/nbody2hydro/datacopies/normalized1024_z3_alt_bigcrop_transp.h5'
@@ -222,6 +223,10 @@ A100_crop96_128GPU:
   lr_schedule: {start_lr: 2.26E-3, end_lr: 0., warmup_steps: 128}
   ngpu: 128
   lambda_rho: 0.
+
+cosmo_small-AMP:
+  <<: *cosmo_small
+  enable_amp: True
 
 cosmo_small-dali-lomem: &cosmo_small_dali_lomem
   <<: *base
