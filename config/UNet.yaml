@@ -10,6 +10,7 @@ base: &base
   enable_ndhwc: False
   enable_apex: False
   enable_jit: False
+  enable_benchy: False
   ngpu: 1
   expdir: '/results'
 

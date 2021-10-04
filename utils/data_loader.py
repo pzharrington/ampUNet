@@ -18,11 +18,19 @@ def get_data_loader_distributed(params, world_rank):
     else:
         train_data, val_data = RandomCropDataset(params, validation=False), RandomCropDataset(params, validation=True)
 
-    train_loader = DataLoader(train_data,
-                              batch_size=params.batch_size,
-                              num_workers=params.num_data_workers,
-                              worker_init_fn=worker_init,
-                              pin_memory=torch.cuda.is_available())
+    if not params.enable_benchy:
+        train_loader = DataLoader(train_data,
+                                  batch_size=params.batch_size,
+                                  num_workers=params.num_data_workers,
+                                  worker_init_fn=worker_init,
+                                  pin_memory=torch.cuda.is_available())
+    else:
+        from benchy.torch import BenchmarkDataLoader
+        train_loader = BenchmarkDataLoader(train_data,
+                                           batch_size=params.batch_size,
+                                           num_workers=params.num_data_workers,
+                                           worker_init_fn=worker_init,
+                                           pin_memory=torch.cuda.is_available())
     val_loader = DataLoader(val_data,
                               batch_size=params.batch_size,
                               num_workers=params.num_data_workers,
