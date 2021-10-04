@@ -30,7 +30,6 @@ def capture_model(params, model, loss_func, scaler, capture_stream, device, num_
   static_label = torch.zeros(tar_shape, dtype=torch.float32, device=device)
   if params.enable_ndhwc:
     static_input = static_input.contiguous(memory_format = torch.channels_last_3d)
-    static_output = static_output.contiguous(memory_format = torch.channels_last_3d)
 
   capture_stream.wait_stream(torch.cuda.current_stream())
   with torch.cuda.stream(capture_stream):
@@ -109,7 +108,18 @@ def train(params, args, world_rank):
       model = DistributedDataParallel(model)
   capture_stream.synchronize()
 
-  graph, static_input, static_output, static_label, static_loss = capture_model(params, model, UNet.loss_func, scaler,
+  if params.enable_jit:
+    torch._C._jit_set_nvfuser_enabled(True)
+    torch._C._jit_set_texpr_fuser_enabled(False)
+    torch._C._jit_override_can_fuse_on_cpu(False)
+    torch._C._jit_override_can_fuse_on_gpu(False)
+    #torch._C._jit_set_profiling_executor(True)
+    #torch._C._jit_set_profiling_mode(True)
+    #torch._C._jit_set_bailout_depth(20)
+    model_handle = model.module if params.distributed else model
+    model_handle = torch.jit.script(model_handle)
+
+  graph, static_input, static_output, static_label, static_loss = capture_model(params, model, UNet.loss_func_opt, scaler,
                                                                                 capture_stream, device, num_warmup=20)
 
   iters = 0
@@ -193,7 +203,7 @@ def train(params, args, world_rank):
           with autocast(params.enable_amp):
             inp, tar = map(lambda x: x.to(device), data)
             gen = model(inp)
-            loss = UNet.loss_func(gen, tar, params.lambda_rho)
+            loss = UNet.loss_func_opt(gen, tar, params.lambda_rho)
             val_loss.append(loss.item())
       val_end = time.time()
       logging.info('  Avg val loss=%f'%np.mean(val_loss))

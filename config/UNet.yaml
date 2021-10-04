@@ -11,6 +11,7 @@ base: &base
   enable_ndhwc: False
   enable_apex: False
   enable_benchy: False
+  enable_jit: False
   ngpu: 1
   expdir: '/results'
 
@@ -30,7 +31,7 @@ base_small-AMP:
   data_size: 128
   enable_amp: True
   num_epochs: 1
-  Nsamples: 10
+  Nsamples: 20
   Nsamples_val: 2
 
 
@@ -228,6 +229,14 @@ cosmo_small-AMP:
   <<: *cosmo_small
   enable_amp: True
 
+cosmo_small-APEX:
+  <<: *cosmo_small
+  enable_apex: True
+
+cosmo_small-AMP:
+  <<: *cosmo_small
+  enable_amp: True
+
 cosmo_small-dali-lomem: &cosmo_small_dali_lomem
   <<: *base
   data_loader_config: 'dali-lomem'
@@ -239,12 +248,25 @@ cosmo_small-dali-lomem: &cosmo_small_dali_lomem
   data_size: 128
   Nsamples: 1000
   Nsamples_val: 256
-  num_epochs: 20
+  num_epochs: 5
 
 cosmo_small-dali-lomem-AMP: &cosmo_small_dali_lomem_amp
   <<: *cosmo_small_dali_lomem
   enable_amp: True
 
-cosmo_small-dali-lomem-AMP-APEX:
+cosmo_small-dali-lomem-AMP-APEX: &cosmo_small_dali_lomem_amp_apex
   <<: *cosmo_small_dali_lomem_amp
   enable_apex: True
+
+cosmo_small-dali-lomem-AMP-APEX-JIT:
+  <<: *cosmo_small_dali_lomem_amp_apex
+  enable_jit: True 
+
+cosmo_small-dali-lomem-AMP-APEX-NDHWC:
+  <<: *cosmo_small_dali_lomem_amp_apex
+  enable_ndhwc: True
+
+cosmo_small-dali-lomem-AMP-APEX-JIT-NDHWC:
+  <<: *cosmo_small_dali_lomem_amp_apex
+  enable_jit: True
+  enable_ndhwc: True

@@ -38,7 +38,7 @@ def train(params, args, world_rank):
 
   model = UNet.UNet(params).to(device)
   model.apply(model.get_weights_function(params.weight_init))
-
+  
   # NDHWC:
   if params.enable_ndhwc:
     model = model.to(memory_format=torch.channels_last_3d)
@@ -54,6 +54,17 @@ def train(params, args, world_rank):
   else:
     optimizer = optim.Adam(model.parameters(), lr = params.lr_schedule['start_lr'])
 
+  if params.enable_jit:
+    torch._C._jit_set_nvfuser_enabled(True)
+    torch._C._jit_set_texpr_fuser_enabled(False)
+    torch._C._jit_override_can_fuse_on_cpu(False)
+    torch._C._jit_override_can_fuse_on_gpu(False)
+    #torch._C._jit_set_profiling_executor(True)
+    #torch._C._jit_set_profiling_mode(True)
+    #torch._C._jit_set_bailout_depth(20)
+    model_handle = model.module if params.distributed else model
+    model_handle = torch.jit.script(model_handle)  
+    
   iters = 0
   startEpoch = 0
   params.lr_schedule['tot_steps'] = params.num_epochs*len(train_data_loader)
@@ -141,9 +152,9 @@ def train(params, args, world_rank):
     val_loss = []
     model.eval()
     if not args.no_val and world_rank==0:
-      for i, data in enumerate(val_data_loader, 0):
-        with autocast(params.enable_amp):
-          with torch.no_grad():
+      with torch.no_grad():
+        for i, data in enumerate(val_data_loader, 0):
+          with autocast(params.enable_amp):
             inp, tar = map(lambda x: x.to(device), data)
             gen = model(inp)
             loss = UNet.loss_func(gen, tar, params.lambda_rho)

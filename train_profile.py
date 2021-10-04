@@ -20,6 +20,10 @@ from networks import UNet
 
 import apex.optimizers as aoptim
 
+# dlprof stuff
+#import nvidia_dlprof_pytorch_nvtx
+#nvidia_dlprof_pytorch_nvtx.init()
+
 def train(params, args, world_rank):
   logging.info('rank %d, begin data loader init'%world_rank)
   train_data_loader, val_data_loader = get_data_loader_distributed(params, world_rank)
@@ -49,10 +53,22 @@ def train(params, args, world_rank):
   if params.distributed:
     model = DistributedDataParallel(model) 
 
+
+  if params.enable_jit:
+    torch._C._jit_set_nvfuser_enabled(True)
+    torch._C._jit_set_texpr_fuser_enabled(False)
+    torch._C._jit_override_can_fuse_on_cpu(False)
+    torch._C._jit_override_can_fuse_on_gpu(False)
+    #torch._C._jit_set_profiling_executor(True)
+    #torch._C._jit_set_profiling_mode(True)
+    #torch._C._jit_set_bailout_depth(20)
+
+    # train
+    model_handle = model.module if params.distributed else model
+    model_handle = torch.jit.script(model_handle)
+  
   iters = 0
   startEpoch = 0
-  device = torch.cuda.current_device()
-
   
   if args.no_val:
     if world_rank==0:
@@ -70,7 +86,7 @@ def train(params, args, world_rank):
       optimizer.zero_grad()
       with autocast(params.enable_amp):
         gen = model(inp)
-        loss = UNet.loss_func(gen, tar, params.lambda_rho)
+        loss = UNet.loss_func_opt2(gen, tar, params.lambda_rho)
 
       if params.enable_amp:
         scaler.scale(loss).backward()
@@ -90,6 +106,7 @@ def train(params, args, world_rank):
   t1 = time.time()
   with torch.autograd.profiler.emit_nvtx():
     for epoch in range(startEpoch, startEpoch+params.num_epochs):
+      torch.cuda.nvtx.range_push(f"Training epoch {epoch}")
       start = time.time()
       tr_loss = []
       tr_time = 0.
@@ -98,6 +115,7 @@ def train(params, args, world_rank):
 
       model.train()
       for i, data in enumerate(train_data_loader, 0):
+        torch.cuda.nvtx.range_push(f"Step {i}")
         iters += 1
         dat_start = time.time()
         inp, tar = map(lambda x: x.to(device), data)
@@ -107,7 +125,7 @@ def train(params, args, world_rank):
         optimizer.zero_grad()
         with autocast(params.enable_amp):
           gen = model(inp)
-          loss = UNet.loss_func(gen, tar, params.lambda_rho)
+          loss = UNet.loss_func_opt2(gen, tar, params.lambda_rho)
           tr_loss.append(loss.item())
           
         if params.enable_amp:
@@ -121,8 +139,10 @@ def train(params, args, world_rank):
         tr_end = time.time()
         tr_time += tr_end - tr_start
         dat_time += tr_start - dat_start
+        torch.cuda.nvtx.range_pop()
 
       end = time.time()
+      torch.cuda.nvtx.range_pop()
       if world_rank==0:
         logging.info('Time taken for epoch {} is {} sec, avg {} iters/sec'.format(epoch + 1, end-start, params.Nsamples/(end-start)))
         logging.info('  Step breakdown:')
@@ -130,21 +150,23 @@ def train(params, args, world_rank):
         logging.info('  Avg train loss=%f'%np.mean(tr_loss))
         args.tboard_writer.add_scalar('Loss/train', np.mean(tr_loss), iters)
 
+      torch.cuda.nvtx.range_push(f"Validation epoch {epoch}") 
       val_start = time.time()
       val_loss = []
-      model.eval()
+      model.eval()      
       if not args.no_val and world_rank==0:
-        for i, data in enumerate(val_data_loader, 0):
-          with autocast(params.enable_amp):
-            with torch.no_grad():
+        with torch.no_grad():
+          for i, data in enumerate(val_data_loader, 0):
+            with autocast(params.enable_amp):
               inp, tar = map(lambda x: x.to(device), data)
               gen = model(inp)
-              loss = UNet.loss_func(gen, tar, params.lambda_rho)
+              loss = UNet.loss_func_opt2(gen, tar, params.lambda_rho)
               val_loss.append(loss.item())
         val_end = time.time()
         logging.info('  Avg val loss=%f'%np.mean(val_loss))
         logging.info('  Total validation time: {} sec'.format(val_end - val_start)) 
         args.tboard_writer.add_scalar('Loss/valid', np.mean(val_loss), iters)
+      torch.cuda.nvtx.range_pop()
 
   t2 = time.time()
   tottime = t2 - t1
