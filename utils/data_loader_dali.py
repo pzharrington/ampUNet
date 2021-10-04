@@ -159,5 +159,9 @@ class DaliDataLoader(object):
                 # the data is in NDHWC already, we just need to make sure torch understands it:
                 inp = torch.as_strided(inp, size=self.inp_shape, stride=self.inp_strides)
                 tar = torch.as_strided(tar, size=self.tar_shape, stride=self.tar_strides)
+                
+            #if True:
+            #    inp = inp.half()
+            #    tar = tar.half()
             
             yield inp, tar

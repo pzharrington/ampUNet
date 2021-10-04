@@ -20,6 +20,8 @@ def inverse_transf(x):
 
 @torch.jit.script
 def loss_func(gen_output, target, lambda_rho: float):
+
+    # first part of the loss
     l1_loss = nn.functional.l1_loss(gen_output, target)
 
     # Transform T and rho back to original space, compute additional L1
@@ -29,6 +31,34 @@ def loss_func(gen_output, target, lambda_rho: float):
     return l1_loss + lambda_rho * orig_l1_loss
 
 
+@torch.jit.script
+def loss_func_opt(gen_output: torch.Tensor, target: torch.Tensor, lambda_rho: float):
+
+    # first part of the loss
+    l1_loss = torch.mean(torch.abs(gen_output - target))
+
+    # Transform T and rho back to original space, compute additional L1
+    orig_gen = inverse_transf(gen_output[:,0,:,:,:])
+    orig_tar = inverse_transf(target[:,0,:,:,:])
+    orig_l1_loss = torch.mean(torch.abs(orig_gen - orig_tar))
+    return l1_loss + lambda_rho * orig_l1_loss  
+
+
+@torch.jit.script
+def loss_func_opt2(gen_output: torch.Tensor, target: torch.Tensor, lambda_rho: float):
+
+    # first part of the loss
+    l1_loss = torch.abs(gen_output - target)
+    
+    # Transform T and rho back to original space, compute additional L1
+    orig_gen = inverse_transf(gen_output[:,0,:,:,:])
+    orig_tar = inverse_transf(target[:,0,:,:,:])
+    orig_l1_loss = torch.abs(orig_gen - orig_tar)
+
+    # combine
+    l1_loss[:,0,:,:,:] += lambda_rho * orig_l1_loss
+    
+    return torch.mean(l1_loss)
 
 
 class UNet(nn.Module):
