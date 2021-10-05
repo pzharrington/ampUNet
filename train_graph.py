@@ -22,7 +22,7 @@ from networks import UNet
 import apex.optimizers as aoptim
 
 
-def capture_model(params, model, loss_func, scaler, capture_stream, device, num_warmup=20):
+def capture_model(params, model, loss_func, lambda_rho, scaler, capture_stream, device, num_warmup=20):
   print("Capturing Model")
   inp_shape = (params.batch_size, 4, params.data_size, params.data_size, params.data_size)
   tar_shape = (params.batch_size, 5, params.data_size, params.data_size, params.data_size)
@@ -37,7 +37,7 @@ def capture_model(params, model, loss_func, scaler, capture_stream, device, num_
       model.zero_grad(set_to_none=True)
       with autocast(params.enable_amp):
         static_output = model(static_input)
-        static_loss = loss_func(static_output, static_label, params.lambda_rho)
+        static_loss = loss_func(static_output, static_label, lambda_rho)
 
       if params.enable_amp:
         scaler.scale(static_loss).backward()
@@ -61,7 +61,7 @@ def capture_model(params, model, loss_func, scaler, capture_stream, device, num_
 
     with autocast(params.enable_amp):
       static_output = model(static_input)
-      static_loss = loss_func(static_output, static_label, params.lambda_rho)
+      static_loss = loss_func(static_output, static_label, lambda_rho)
 
       if params.enable_amp:
         scaler.scale(static_loss).backward()
@@ -119,7 +119,16 @@ def train(params, args, world_rank):
     model_handle = model.module if params.distributed else model
     model_handle = torch.jit.script(model_handle)
 
-  graph, static_input, static_output, static_label, static_loss = capture_model(params, model, UNet.loss_func_opt, scaler,
+  # select loss function
+  #loss_func = UNet.loss_func_opt
+  #lambda_rho = params.lambda_rho
+  loss_func = UNet.loss_func_opt_final
+  lambda_rho = torch.zeros((1,5,1,1,1), dtype=torch.float32).to(device)
+  lambda_rho[:,0,:,:,:] = params.lambda_rho
+  if params.enable_ndhwc:
+    lambda_rho = lambda_rho.contiguous(memory_format=torch.channels_last_3d)
+
+  graph, static_input, static_output, static_label, static_loss = capture_model(params, model, loss_func, lambda_rho, scaler,
                                                                                 capture_stream, device, num_warmup=20)
 
   iters = 0
@@ -203,7 +212,7 @@ def train(params, args, world_rank):
           with autocast(params.enable_amp):
             inp, tar = map(lambda x: x.to(device), data)
             gen = model(inp)
-            loss = UNet.loss_func_opt(gen, tar, params.lambda_rho)
+            loss = loss_func(gen, tar, lambda_rho)
             val_loss.append(loss.item())
       val_end = time.time()
       logging.info('  Avg val loss=%f'%np.mean(val_loss))

@@ -59,6 +59,15 @@ def train(params, args, world_rank):
     #torch._C._jit_set_bailout_depth(20)
     model_handle = model.module if params.distributed else model
     model_handle = torch.jit.script(model_handle)  
+
+  # select loss function
+  #loss_func = UNet.loss_func_opt
+  #lambda_rho = params.lambda_rho
+  loss_func = UNet.loss_func_opt_final
+  lambda_rho = torch.zeros((1,5,1,1,1), dtype=torch.float32).to(device)
+  lambda_rho[:,0,:,:,:] = params.lambda_rho
+  if params.enable_ndhwc:
+    lambda_rho = lambda_rho.contiguous(memory_format=torch.channels_last_3d)
     
   iters = 0
   startEpoch = 0
@@ -79,7 +88,7 @@ def train(params, args, world_rank):
       optimizer.zero_grad()
       with autocast(params.enable_amp):
         gen = model(inp)
-        loss = UNet.loss_func(gen, tar, params.lambda_rho)
+        loss = loss_func(gen, tar, lambda_rho)
 
       if params.enable_amp:
         scaler.scale(loss).backward()
@@ -115,7 +124,7 @@ def train(params, args, world_rank):
       optimizer.zero_grad()
       with autocast(params.enable_amp):
         gen = model(inp)
-        loss = UNet.loss_func(gen, tar, params.lambda_rho)
+        loss = loss_func(gen, tar, lambda_rho)
         tr_loss.append(loss.item())
 
       if params.enable_amp:
@@ -147,7 +156,7 @@ def train(params, args, world_rank):
           with autocast(params.enable_amp):
             inp, tar = map(lambda x: x.to(device), data)
             gen = model(inp)
-            loss = UNet.loss_func(gen, tar, params.lambda_rho)
+            loss = loss_func(gen, tar, lambda_rho)
             val_loss.append(loss.item())
       val_end = time.time()
       logging.info('  Avg val loss=%f'%np.mean(val_loss))
