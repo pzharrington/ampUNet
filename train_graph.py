@@ -28,8 +28,6 @@ def capture_model(params, model, loss_func, lambda_rho, scaler, capture_stream, 
   tar_shape = (params.batch_size, 5, params.data_size, params.data_size, params.data_size)
   static_input = torch.zeros(inp_shape, dtype=torch.float32, device=device)
   static_label = torch.zeros(tar_shape, dtype=torch.float32, device=device)
-  if params.enable_ndhwc:
-    static_input = static_input.contiguous(memory_format = torch.channels_last_3d)
 
   capture_stream.wait_stream(torch.cuda.current_stream())
   with torch.cuda.stream(capture_stream):
@@ -87,10 +85,6 @@ def train(params, args, world_rank):
   model = UNet.UNet(params).to(device)
   model.apply(model.get_weights_function(params.weight_init))
 
-  # NDHWC:
-  if params.enable_ndhwc:
-    model = model.to(memory_format=torch.channels_last_3d)
-
   # select optimizer
   if params.enable_apex:
     optimizer = aoptim.FusedAdam(model.parameters(), lr = params.lr,
@@ -125,8 +119,6 @@ def train(params, args, world_rank):
   loss_func = UNet.loss_func_opt_final
   lambda_rho = torch.zeros((1,5,1,1,1), dtype=torch.float32).to(device)
   lambda_rho[:,0,:,:,:] = params.lambda_rho
-  if params.enable_ndhwc:
-    lambda_rho = lambda_rho.contiguous(memory_format=torch.channels_last_3d)
 
   graph, static_input, static_output, static_label, static_loss = capture_model(params, model, loss_func, lambda_rho, scaler,
                                                                                 capture_stream, device, num_warmup=20)

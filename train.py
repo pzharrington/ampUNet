@@ -39,10 +39,6 @@ def train(params, args, world_rank):
   model = UNet.UNet(params).to(device)
   model.apply(model.get_weights_function(params.weight_init))
   
-  # NDHWC:
-  if params.enable_ndhwc:
-    model = model.to(memory_format=torch.channels_last_3d)
-
   if params.enable_amp:
     scaler = GradScaler()
   if params.distributed:
@@ -71,8 +67,6 @@ def train(params, args, world_rank):
   loss_func = UNet.loss_func_opt_final
   lambda_rho = torch.zeros((1,5,1,1,1), dtype=torch.float32).to(device)
   lambda_rho[:,0,:,:,:] = params.lambda_rho
-  if params.enable_ndhwc:
-    lambda_rho = lambda_rho.contiguous(memory_format=torch.channels_last_3d)
     
   iters = 0
   startEpoch = 0

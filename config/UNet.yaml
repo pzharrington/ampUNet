@@ -8,7 +8,6 @@ base: &base
   batch_size: 1
   num_epochs: 2
   enable_amp: False
-  enable_ndhwc: False
   enable_apex: False
   enable_benchy: False
   enable_jit: False
@@ -16,7 +15,7 @@ base: &base
   expdir: '/results'
 
   # Data
-  data_loader_config: 'synthetic' # choices: 'synthetic', 'inmem', 'lowmem', 'dali-inmem'
+  data_loader_config: 'synthetic' # choices: 'synthetic', 'inmem', 'lowmem', 'dali-lowmem'
   box_size: [1024, 1024] # total size of simulation boxes (train, validation) 
   data_size: 256 # size of crops for training
   num_data_workers: 2 # number of dataloader worker threads per proc
@@ -61,15 +60,13 @@ cosmo-AMP-APEX:
   <<: *cosmo_amp
   enable_apex: True
 
-cosmo-AMP-NDHWC:
-  <<: *cosmo_amp
-  enable_ndhwc: True
-
 cosmo-dali: &cosmo_dali
   <<: *base
-  data_loader_config: 'dali-inmem'
-  train_path: '/global/cscratch1/sd/pharring/nbody2hydro/datacopies/normalized1024_z3_alt_bigcrop_transp.h5'
-  val_path: '/global/cscratch1/sd/pharring/nbody2hydro/datacopies/normalized1024_z3_alt_bigcrop2_transp.h5'
+  data_loader_config: 'dali-lowmem'
+  train_path: '/data/normalized1024_z3_alt_bigcrop_data.npy'
+  train_path_label: '/data/normalized1024_z3_alt_bigcrop_label.npy'
+  val_path: '/data/normalized1024_z3_alt_bigcrop2_data.npy'
+  val_path_label: '/data/normalized1024_z3_alt_bigcrop2_label.npy'
   use_cache: '/tmp/'
   Nsamples: 1000
   Nsamples_val: 64
@@ -89,34 +86,6 @@ cosmo-dali-AMP-APEX:
   <<: *cosmo_dali_amp
   enable_apex: True
     
-cosmo-dali-AMP-NDHWC:
-  <<: *cosmo_dali_amp
-  enable_ndhwc: True
-
-cosmo-dali-lomem: &cosmo_dali_lomem
-  <<: *base
-  data_loader_config: 'dali-lomem'
-  train_path: '/data/normalized1024_z3_alt_bigcrop_data.npy'
-  train_path_label: '/data/normalized1024_z3_alt_bigcrop_label.npy'
-  val_path: '/data/normalized1024_z3_alt_bigcrop2_data.npy'
-  val_path_label: '/data/normalized1024_z3_alt_bigcrop2_label.npy'
-  use_cache: None # '/tmp/'
-  Nsamples: 100 #1000
-  Nsamples_val: 20 #64
-  num_epochs: 5
-
-cosmo-dali-lomem-AMP: &cosmo_dali_lomem_amp
-  <<: *cosmo_dali_lomem
-  enable_amp: True
-
-cosmo-dali-lomem-AMP-APEX:
-  <<: *cosmo_dali_lomem_amp
-  enable_apex: True
-
-cosmo-dali-lomem-AMP-NDHWC:
-  <<: *cosmo_dali_lomem_amp
-  enable_ndhwc: True
-
 cosmo_small: &cosmo_small
   <<: *base
   data_loader_config: 'lowmem'
@@ -237,9 +206,9 @@ cosmo_small-AMP:
   <<: *cosmo_small
   enable_amp: True
 
-cosmo_small-dali-lomem: &cosmo_small_dali_lomem
+cosmo_small-dali: &cosmo_small_dali
   <<: *base
-  data_loader_config: 'dali-lomem'
+  data_loader_config: 'dali-lowmem'
   train_path: '/data/normalized1024_z3_alt_bigcrop_data.npy'
   train_path_label: '/data/normalized1024_z3_alt_bigcrop_label.npy'
   val_path: '/data/normalized1024_z3_alt_bigcrop2_data.npy'
@@ -250,23 +219,14 @@ cosmo_small-dali-lomem: &cosmo_small_dali_lomem
   Nsamples_val: 256
   num_epochs: 5
 
-cosmo_small-dali-lomem-AMP: &cosmo_small_dali_lomem_amp
-  <<: *cosmo_small_dali_lomem
+cosmo_small-dali-AMP: &cosmo_small_dali_amp
+  <<: *cosmo_small_dali
   enable_amp: True
 
-cosmo_small-dali-lomem-AMP-APEX: &cosmo_small_dali_lomem_amp_apex
-  <<: *cosmo_small_dali_lomem_amp
+cosmo_small-dali-AMP-APEX: &cosmo_small_dali_amp_apex
+  <<: *cosmo_small_dali_amp
   enable_apex: True
 
-cosmo_small-dali-lomem-AMP-APEX-JIT:
-  <<: *cosmo_small_dali_lomem_amp_apex
+cosmo_small-dali-AMP-APEX-JIT:
+  <<: *cosmo_small_dali_amp_apex
   enable_jit: True 
-
-cosmo_small-dali-lomem-AMP-APEX-NDHWC:
-  <<: *cosmo_small_dali_lomem_amp_apex
-  enable_ndhwc: True
-
-cosmo_small-dali-lomem-AMP-APEX-JIT-NDHWC:
-  <<: *cosmo_small_dali_lomem_amp_apex
-  enable_jit: True
-  enable_ndhwc: True

@@ -101,20 +101,16 @@ class DaliDataLoader(object):
                                 horizontal = flip[1],
                                 vertical = flip[2])
             
-            if params.enable_ndhwc:
-                # no need to do anything, just wrap up
-                pipeline.set_outputs(data_rot, label_rot)
-            else:
-                # a final transposition
-                data_out = fn.transpose(data_rot,
-                                        device = "gpu",
-                                        perm = [3, 0, 1, 2])
+            # a final transposition to ncdhw layout
+            data_out = fn.transpose(data_rot,
+                                    device = "gpu",
+                                    perm = [3, 0, 1, 2])
             
-                label_out = fn.transpose(label_rot,
-                                         device = "gpu",
-                                         perm = [3, 0, 1, 2]) 
+            label_out = fn.transpose(label_rot,
+                                     device = "gpu",
+                                     perm = [3, 0, 1, 2]) 
         
-                pipeline.set_outputs(data_out, label_out)
+            pipeline.set_outputs(data_out, label_out)
 
         return pipeline
 
@@ -122,7 +118,6 @@ class DaliDataLoader(object):
     def __init__(self, params, data_file, label_file, num_samples, num_workers=1, device_id=0):
 
         # extract relevant parameters
-        self.enable_ndhwc = params.enable_ndhwc
         self.batch_size = params.batch_size
         self.size = params.data_size
 
@@ -156,13 +151,4 @@ class DaliDataLoader(object):
             inp = token[0]['inp']
             tar = token[0]['tar']
 
-            if self.enable_ndhwc:
-                # the data is in NDHWC already, we just need to make sure torch understands it:
-                inp = torch.as_strided(inp, size=self.inp_shape, stride=self.inp_strides)
-                tar = torch.as_strided(tar, size=self.tar_shape, stride=self.tar_strides)
-                
-            #if True:
-            #    inp = inp.half()
-            #    tar = tar.half()
-            
             yield inp, tar
