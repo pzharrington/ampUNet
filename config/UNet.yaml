@@ -16,7 +16,7 @@ base: &base
 
   # Data
   data_loader_config: 'synthetic' # choices: 'synthetic', 'inmem', 'lowmem', 'dali-lowmem'
-  box_size: [1024, 1024] # total size of simulation boxes (train, validation) 
+  box_size: [1024, 512] # total size of simulation boxes (train, validation)
   data_size: 256 # size of crops for training
   num_data_workers: 2 # number of dataloader worker threads per proc
   N_out_channels: 5
@@ -63,11 +63,11 @@ cosmo-AMP-APEX:
 cosmo-dali: &cosmo_dali
   <<: *base
   data_loader_config: 'dali-lowmem'
-  train_path: '/data/normalized1024_z3_alt_bigcrop_data.npy'
-  train_path_label: '/data/normalized1024_z3_alt_bigcrop_label.npy'
-  val_path: '/data/normalized1024_z3_alt_bigcrop2_data.npy'
-  val_path_label: '/data/normalized1024_z3_alt_bigcrop2_label.npy'
-  use_cache: '/tmp/'
+  train_path: '/data/downsamp_2048crop_train_data.npy'
+  train_path_label: '/data/downsamp_2048crop_train_label.npy'
+  val_path: '/data/downsamp_1024crop_valid_data.npy'
+  val_path_label: '/data/downsamp_1024crop_valid_label.npy'
+  use_cache: None
   Nsamples: 1000
   Nsamples_val: 64
   num_epochs: 5
@@ -97,6 +97,39 @@ cosmo_small: &cosmo_small
   Nsamples_val: 256
   num_epochs: 20
   batch_size: 16
+
+cosmo_small-AMP:
+  <<: *cosmo_small
+  enable_amp: True
+
+cosmo_small-APEX:
+  <<: *cosmo_small
+  enable_apex: True
+
+cosmo_small-dali: &cosmo_small_dali
+  <<: *base
+  data_loader_config: 'dali-lowmem'
+  train_path: '/data/downsamp_2048crop_train_data.npy'
+  train_path_label: '/data/downsamp_2048crop_train_label.npy'
+  val_path: '/data/downsamp_1024crop_valid_data.npy'
+  val_path_label: '/data/downsamp_1024crop_valid_label.npy'
+  use_cache: None
+  data_size: 128
+  Nsamples: 1000
+  Nsamples_val: 256
+  num_epochs: 5
+
+cosmo_small-dali-AMP: &cosmo_small_dali_amp
+  <<: *cosmo_small_dali
+  enable_amp: True
+
+cosmo_small-dali-AMP-APEX: &cosmo_small_dali_amp_apex
+  <<: *cosmo_small_dali_amp
+  enable_apex: True
+
+cosmo_small-dali-AMP-APEX-JIT:
+  <<: *cosmo_small_dali_amp_apex
+  enable_jit: True 
 
 
 #------------------------------------------------------------------------
@@ -194,39 +227,3 @@ A100_crop96_128GPU:
   ngpu: 128
   lambda_rho: 0.
 
-cosmo_small-AMP:
-  <<: *cosmo_small
-  enable_amp: True
-
-cosmo_small-APEX:
-  <<: *cosmo_small
-  enable_apex: True
-
-cosmo_small-AMP:
-  <<: *cosmo_small
-  enable_amp: True
-
-cosmo_small-dali: &cosmo_small_dali
-  <<: *base
-  data_loader_config: 'dali-lowmem'
-  train_path: '/data/normalized1024_z3_alt_bigcrop_data.npy'
-  train_path_label: '/data/normalized1024_z3_alt_bigcrop_label.npy'
-  val_path: '/data/normalized1024_z3_alt_bigcrop2_data.npy'
-  val_path_label: '/data/normalized1024_z3_alt_bigcrop2_label.npy'
-  use_cache: None # '/tmp/'
-  data_size: 128
-  Nsamples: 1000
-  Nsamples_val: 256
-  num_epochs: 5
-
-cosmo_small-dali-AMP: &cosmo_small_dali_amp
-  <<: *cosmo_small_dali
-  enable_amp: True
-
-cosmo_small-dali-AMP-APEX: &cosmo_small_dali_amp_apex
-  <<: *cosmo_small_dali_amp
-  enable_apex: True
-
-cosmo_small-dali-AMP-APEX-JIT:
-  <<: *cosmo_small_dali_amp_apex
-  enable_jit: True 

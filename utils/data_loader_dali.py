@@ -17,18 +17,20 @@ from .symmetry import get_isomorphism_axes_angle
 
 
 def get_data_loader_distributed(params, world_rank, device_id = 0):
-    train_loader = DaliDataLoader(params, params.train_path, params.train_path_label, params.Nsamples, num_workers=params.num_data_workers, device_id=device_id)
+    train_loader = DaliDataLoader(params, params.train_path, params.train_path_label, params.Nsamples,
+                                  num_workers=params.num_data_workers, device_id=device_id, validation=False)
     if params.enable_benchy:
         from benchy.torch import BenchmarkGenericIteratorWrapper
         train_loader = BenchmarkGenericIteratorWrapper(train_loader, params.batch_size)
-    validation_loader = DaliDataLoader(params, params.val_path, params.val_path_label, params.Nsamples_val, num_workers=params.num_data_workers, device_id=device_id)
+    validation_loader = DaliDataLoader(params, params.val_path, params.val_path_label, params.Nsamples_val,
+                                       num_workers=params.num_data_workers, device_id=device_id, validation=True)
     return train_loader, validation_loader
 
 
     
 class DaliDataLoader(object):
     """Random crops"""
-    def get_pipeline(self, params, data_file, label_file, num_samples, num_workers, device_id):
+    def get_pipeline(self, params, data_file, label_file, num_samples, num_workers, device_id, validation):
 
         # construct master object
         pipeline = Pipeline(batch_size = params.batch_size,
@@ -43,8 +45,10 @@ class DaliDataLoader(object):
             return rstart, rend
 
         
+        length = params.box_size[0] if not validation else params.box_size[1]
+
         with pipeline:
-            rstart, rend = fn.external_source(source = lambda x: get_crop_coords(self.rng, params.box_size, params.data_size, params.batch_size),
+            rstart, rend = fn.external_source(source = lambda x: get_crop_coords(self.rng, length, params.data_size, params.batch_size),
                                               num_outputs = 2,
                                               no_copy = False)
             
@@ -115,7 +119,7 @@ class DaliDataLoader(object):
         return pipeline
 
     
-    def __init__(self, params, data_file, label_file, num_samples, num_workers=1, device_id=0):
+    def __init__(self, params, data_file, label_file, num_samples, num_workers=1, device_id=0, validation=False):
 
         # extract relevant parameters
         self.batch_size = params.batch_size
@@ -132,7 +136,7 @@ class DaliDataLoader(object):
         self.tar_strides = [ D*H*W*5, 1, H*W*5, W*5, 5]
         
         # construct pipeline
-        self.pipe = self.get_pipeline(params, data_file, label_file, num_samples, num_workers, device_id)
+        self.pipe = self.get_pipeline(params, data_file, label_file, num_samples, num_workers, device_id, validation)
         self.pipe.build()
         
         self.iterator = DALIGenericIterator([self.pipe], ['inp', 'tar'],
@@ -141,7 +145,8 @@ class DaliDataLoader(object):
                                             auto_reset = True,
                                             prepare_first_batch = True)
 
-        self.length = num_samples
+        self.length = params.box_size[0] if not validation else params.box_size[1]
+
         
     def __len__(self):
         return self.length
