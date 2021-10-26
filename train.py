@@ -115,6 +115,7 @@ def train(params, args, world_rank):
     log_time = 0.
 
     model.train()
+    step_count = 0
     for i, data in enumerate(train_data_loader, 0):
       iters += 1
       dat_start = time.time()
@@ -136,16 +137,17 @@ def train(params, args, world_rank):
       else:
         loss.backward()
         optimizer.step()
-      
+
       tr_end = time.time()
       tr_time += tr_end - tr_start
       dat_time += tr_start - dat_start
+      step_count += 1
 
     end = time.time()
     if world_rank==0:
-      logging.info('Time taken for epoch {} is {} sec, avg {} iters/sec'.format(epoch + 1, end-start, len(train_data_loader)/(end-start)))
+      logging.info('Time taken for epoch {} is {} sec, avg {} iters/sec'.format(epoch + 1, end-start, step_count/(end-start)))
       logging.info('  Step breakdown:')
-      logging.info('  Data to GPU: %.2f ms, U-Net fwd/back/optim: %.2f ms'%(1e3*dat_time/len(train_data_loader), 1e3*tr_time/len(train_data_loader)))
+      logging.info('  Data to GPU: %.2f ms, U-Net fwd/back/optim: %.2f ms'%(1e3*dat_time/step_count, 1e3*tr_time/step_count))
       logging.info('  Avg train loss=%f'%np.mean(tr_loss))
       args.tboard_writer.add_scalar('Loss/train', np.mean(tr_loss), iters)
       args.tboard_writer.add_scalar('Learning Rate', optimizer.param_groups[0]['lr'], iters)
@@ -183,11 +185,21 @@ if __name__ == '__main__':
   parser.add_argument("--yaml_config", default='./config/UNet.yaml', type=str)
   parser.add_argument("--config", default='base', type=str)
   parser.add_argument("--no_val", action='store_true', help='skip validation steps (for profiling train only)')
+  parser.add_argument("--enable_amp", action='store_true', help='enable automatic mixed precision')
+  parser.add_argument("--enable_apex", action='store_true', help='enable apex fused Adam optimizer')
+  parser.add_argument("--enable_jit", action='store_true', help='enable JIT compilation')
+  parser.add_argument("--enable_benchy", action='store_true', help='enable benchy tool usage')
   args = parser.parse_args()
   
   run_num = args.run_num
 
   params = YParams(os.path.abspath(args.yaml_config), args.config)
+
+  # Update config with modified args
+  params.update({"enable_amp" : args.enable_amp,
+                 "enable_apex" : args.enable_apex,
+                 "enable_jit" : args.enable_jit,
+                 "enable_benchy" : args.enable_benchy})
 
   params.distributed = False
   if 'WORLD_SIZE' in os.environ:

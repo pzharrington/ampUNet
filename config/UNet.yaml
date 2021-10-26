@@ -24,24 +24,6 @@ base: &base
   val_path: None
   use_cache: None # set this to a cache dir (e.g., NVMe on CoriGPU) if you copied data there
 
-
-base_small-AMP:
-  <<: *base
-  data_size: 128
-  enable_amp: True
-  num_epochs: 1
-  Nsamples: 20
-  Nsamples_val: 2
-
-
-withAMP:
-  <<: *base
-  enable_amp: True
-
-multi8: 
-  <<: *base
-  ngpu: 8
-
 cosmo: &cosmo
   <<: *base
   data_loader_config: 'lowmem'
@@ -51,14 +33,6 @@ cosmo: &cosmo
   Nsamples: 1000
   Nsamples_val: 64
   num_epochs: 5
-
-cosmo-AMP: &cosmo_amp
-  <<: *cosmo
-  enable_amp: True
-
-cosmo-AMP-APEX:
-  <<: *cosmo_amp
-  enable_apex: True
 
 cosmo-dali: &cosmo_dali
   <<: *base
@@ -72,20 +46,6 @@ cosmo-dali: &cosmo_dali
   Nsamples_val: 64
   num_epochs: 5
 
-cosmo-dali-AMP: &cosmo_dali_amp
-  <<: *cosmo_dali
-  enable_amp: True
-
-cosmo-dali-AMP-profile:
-  <<: *cosmo_dali_amp
-  Nsamples: 10
-  Nsamples_val: 1
-  num_epochs: 1
-
-cosmo-dali-AMP-APEX:
-  <<: *cosmo_dali_amp
-  enable_apex: True
-    
 cosmo_small: &cosmo_small
   <<: *base
   data_loader_config: 'lowmem'
@@ -98,14 +58,6 @@ cosmo_small: &cosmo_small
   num_epochs: 20
   batch_size: 16
 
-cosmo_small-AMP:
-  <<: *cosmo_small
-  enable_amp: True
-
-cosmo_small-APEX:
-  <<: *cosmo_small
-  enable_apex: True
-
 cosmo_small-dali: &cosmo_small_dali
   <<: *base
   data_loader_config: 'dali-lowmem'
@@ -117,19 +69,7 @@ cosmo_small-dali: &cosmo_small_dali
   data_size: 128
   Nsamples: 1000
   Nsamples_val: 256
-  num_epochs: 5
-
-cosmo_small-dali-AMP: &cosmo_small_dali_amp
-  <<: *cosmo_small_dali
-  enable_amp: True
-
-cosmo_small-dali-AMP-APEX: &cosmo_small_dali_amp_apex
-  <<: *cosmo_small_dali_amp
-  enable_apex: True
-
-cosmo_small-dali-AMP-APEX-JIT:
-  <<: *cosmo_small_dali_amp_apex
-  enable_jit: True 
+  num_epochs: 20
 
 
 #------------------------------------------------------------------------
