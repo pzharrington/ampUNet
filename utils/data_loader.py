@@ -91,8 +91,7 @@ class RandomCropDataset(Dataset):
             with h5py.File(self.fname, 'r') as f:
                 self.Hydro = f['Hydro'][...]
                 self.Nbody = f['Nbody'][...]
-        else:
-            self.file = None
+        self.file = None
 
     def _open_file(self):
         self.file = h5py.File(self.fname, 'r')

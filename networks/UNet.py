@@ -23,7 +23,7 @@ def loss_func(gen_output, target, lambda_rho):
     # first part of the loss
     l1_loss = nn.functional.l1_loss(gen_output, target)
 
-    if params.lambda_rho == 0.:
+    if lambda_rho == 0.:
         return l1_loss
 
     # Transform T and rho back to original space, compute additional L1
