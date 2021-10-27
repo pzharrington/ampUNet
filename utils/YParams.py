@@ -37,4 +37,3 @@ class YParams():
     self.params.update(new_params)
     for key, val in new_params.items():
       self.__setattr__(key, val)
-    print(new_params)
