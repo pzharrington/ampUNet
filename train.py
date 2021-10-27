@@ -29,12 +29,12 @@ def cosine_schedule(optimizer, iternum, start_lr=1e-4, tot_steps=1000, end_lr=0.
   optimizer.param_groups[0]['lr'] = lr
 
 
-def train(params, args, world_rank):
+def train(params, args, local_rank, world_rank):
   logging.info('rank %d, begin data loader init'%world_rank)
   train_data_loader, val_data_loader = get_data_loader_distributed(params, world_rank)
   logging.info('rank %d, data loader initialized with config %s'%(world_rank, params.data_loader_config))
 
-  device = torch.device('cuda:%d'%args.local_rank)
+  device = torch.device('cuda:%d'%local_rank)
 
   model = UNet.UNet(params).to(device)
   model.apply(model.get_weights_function(params.weight_init))
@@ -42,7 +42,7 @@ def train(params, args, world_rank):
   if params.enable_amp:
     scaler = GradScaler()
   if params.distributed:
-    model = DistributedDataParallel(model, device_ids=[args.local_rank])
+    model = DistributedDataParallel(model, device_ids=[local_rank])
 
   if params.enable_apex:
     optimizer = aoptim.FusedAdam(model.parameters(), lr = params.lr_schedule['start_lr'],
@@ -180,7 +180,6 @@ def train(params, args, world_rank):
 if __name__ == '__main__':
 
   parser = argparse.ArgumentParser()
-  parser.add_argument("--local_rank", default=0, type=int)
   parser.add_argument("--run_num", default='00', type=str)
   parser.add_argument("--yaml_config", default='./config/UNet.yaml', type=str)
   parser.add_argument("--config", default='base', type=str)
@@ -189,6 +188,9 @@ if __name__ == '__main__':
   parser.add_argument("--enable_apex", action='store_true', help='enable apex fused Adam optimizer')
   parser.add_argument("--enable_jit", action='store_true', help='enable JIT compilation')
   parser.add_argument("--enable_benchy", action='store_true', help='enable benchy tool usage')
+  parser.add_argument("--data_loader_config", default=None, type=str,
+                      choices=['synthetic', 'inmem', 'lowmem', 'dali-lowmem'],
+                      help="dataloader configuration. choices: 'synthetic', 'inmem', 'lowmem', 'dali-lowmem'")
   args = parser.parse_args()
   
   run_num = args.run_num
@@ -201,18 +203,23 @@ if __name__ == '__main__':
                  "enable_jit" : args.enable_jit,
                  "enable_benchy" : args.enable_benchy})
 
+  if args.data_loader_config:
+      params.update({"data_loader_config" : args.data_loader_config})
+
   params.distributed = False
   if 'WORLD_SIZE' in os.environ:
     params.distributed = int(os.environ['WORLD_SIZE']) > 1
 
   world_rank = 0
+  local_rank = 0
   if params.distributed:
-    torch.cuda.set_device(args.local_rank)
     torch.distributed.init_process_group(backend='nccl',
                                          init_method='env://')
     world_rank = torch.distributed.get_rank() 
+    local_rank = int(os.environ['LOCAL_RANK'])
+    torch.cuda.set_device(local_rank)
   else:
-    torch.cuda.set_device(0)
+    torch.cuda.set_device(local_rank)
 
   torch.backends.cudnn.benchmark = True
 
@@ -228,7 +235,7 @@ if __name__ == '__main__':
 
   params.experiment_dir = os.path.abspath(expDir)
 
-  train(params, args, world_rank)
+  train(params, args, local_rank, world_rank)
   if params.distributed:
     torch.distributed.barrier()
   logging.info('DONE ---- rank %d'%world_rank)

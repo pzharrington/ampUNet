@@ -17,12 +17,12 @@ from .symmetry import get_isomorphism_axes_angle
 
 
 def get_data_loader_distributed(params, world_rank, device_id = 0):
-    train_loader = DaliDataLoader(params, params.train_path, params.train_path_label, params.Nsamples,
+    train_loader = DaliDataLoader(params, params.train_path_npy_data,  params.train_path_npy_label, params.Nsamples,
                                   num_workers=params.num_data_workers, device_id=device_id, validation=False)
     if params.enable_benchy:
         from benchy.torch import BenchmarkGenericIteratorWrapper
         train_loader = BenchmarkGenericIteratorWrapper(train_loader, params.batch_size)
-    validation_loader = DaliDataLoader(params, params.val_path, params.val_path_label, params.Nsamples_val,
+    validation_loader = DaliDataLoader(params, params.val_path_npy_data, params.val_path_npy_label, params.Nsamples_val,
                                        num_workers=params.num_data_workers, device_id=device_id, validation=True)
     return train_loader, validation_loader
 
