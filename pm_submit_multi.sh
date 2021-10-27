@@ -19,8 +19,9 @@ srun -u shifter --image=romerojosh/containers:sc21_tutorial --module=gpu \
     -V ${DATADIR}:/data -V ${LOGDIR}:/logs \
     bash -c '
     source export_DDP_vars.sh
-    export NVIDIA_TF32_OVERRIDE=0
-    python train.py \
+    export NVIDIA_TF32_OVERRIDE=1
+    python train_graph.py \
+    --enable_amp --enable_apex --enable_jit \
     --config=A100_crop64_8GPU --data_loader_config dali-lowmem
     '
 

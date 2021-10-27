@@ -1,6 +1,6 @@
-import gc
 import sys
 import os
+import gc
 import time
 import numpy as np
 import argparse
@@ -11,6 +11,7 @@ import torch.optim as optim
 from torch.cuda.amp import autocast, GradScaler
 import torch.multiprocessing
 from torch.utils.tensorboard import SummaryWriter
+from torch.nn.parallel import DistributedDataParallel
 
 import logging
 from utils import logging_utils
@@ -20,6 +21,13 @@ from utils import get_data_loader_distributed
 from networks import UNet
 
 import apex.optimizers as aoptim
+
+def cosine_schedule(optimizer, iternum, start_lr=1e-4, tot_steps=1000, end_lr=0., warmup_steps=0): 
+  if iternum<warmup_steps:
+    lr = (iternum/warmup_steps)*start_lr
+  else:
+    lr = end_lr + 0.5 * (start_lr - end_lr) * (1 + np.cos(np.pi * (iternum - warmup_steps)/tot_steps))
+  optimizer.param_groups[0]['lr'] = lr
 
 
 def capture_model(params, model, loss_func, lambda_rho, scaler, capture_stream, device, num_warmup=20):
@@ -44,7 +52,7 @@ def capture_model(params, model, loss_func, lambda_rho, scaler, capture_stream, 
 
     # sync here
     capture_stream.synchronize()
-
+    
     gc.collect()
     torch.cuda.empty_cache()
 
@@ -53,7 +61,7 @@ def capture_model(params, model, loss_func, lambda_rho, scaler, capture_stream, 
 
     # zero grads before capture:
     model.zero_grad(set_to_none=True)
-    
+
     # start capture
     graph.capture_begin()
 
@@ -67,40 +75,43 @@ def capture_model(params, model, loss_func, lambda_rho, scaler, capture_stream, 
         static_loss.backward()
 
     graph.capture_end()
-    
+
   torch.cuda.current_stream().wait_stream(capture_stream)
 
   return graph, static_input, static_output, static_label, static_loss
-    
+  
 
-def train(params, args, world_rank):
+def train(params, args, local_rank, world_rank):
+  # set device and benchmark mode
+  torch.backends.cudnn.benchmark = True
+  torch.cuda.set_device(local_rank)
+  device = torch.device('cuda:%d'%local_rank)
+
+  # get data loader
   logging.info('rank %d, begin data loader init'%world_rank)
-  train_data_loader, val_data_loader = get_data_loader_distributed(params, world_rank)
+  train_data_loader, val_data_loader = get_data_loader_distributed(params, world_rank, device.index)
   logging.info('rank %d, data loader initialized with config %s'%(world_rank, params.data_loader_config))
 
-  # set device
-  device = torch.cuda.current_device()
-
-  # upload model
+  # create model
   model = UNet.UNet(params).to(device)
   model.apply(model.get_weights_function(params.weight_init))
-
-  # select optimizer
-  if params.enable_apex:
-    optimizer = aoptim.FusedAdam(model.parameters(), lr = params.lr,
-                                 adam_w_mode=False, set_grad_none=True)
-  else:
-    optimizer = optim.Adam(model.parameters(), lr = params.lr)
-    
+  
   if params.enable_amp:
     scaler = GradScaler()
+  else:
+    scaler = None
 
-  # create capture stream
   capture_stream = torch.cuda.Stream()
   with torch.cuda.stream(capture_stream):
     if params.distributed:
-      model = DistributedDataParallel(model)
+      model = DistributedDataParallel(model, device_ids=[local_rank])
   capture_stream.synchronize()
+
+  if params.enable_apex:
+    optimizer = aoptim.FusedAdam(model.parameters(), lr = params.lr_schedule['start_lr'],
+                                 adam_w_mode=False, set_grad_none=True)
+  else:
+    optimizer = optim.Adam(model.parameters(), lr = params.lr_schedule['start_lr'])
 
   if params.enable_jit:
     torch._C._jit_set_nvfuser_enabled(True)
@@ -111,21 +122,26 @@ def train(params, args, world_rank):
     #torch._C._jit_set_profiling_mode(True)
     #torch._C._jit_set_bailout_depth(20)
     model_handle = model.module if params.distributed else model
-    model_handle = torch.jit.script(model_handle)
+    model_handle = torch.jit.script(model_handle)  
 
   # select loss function
-  #loss_func = UNet.loss_func_opt
-  #lambda_rho = params.lambda_rho
-  loss_func = UNet.loss_func_opt_final
-  lambda_rho = torch.zeros((1,5,1,1,1), dtype=torch.float32).to(device)
-  lambda_rho[:,0,:,:,:] = params.lambda_rho
+  if params.enable_jit:
+    loss_func = UNet.loss_func_opt_final
+    lambda_rho = torch.zeros((1,5,1,1,1), dtype=torch.float32).to(device)
+    lambda_rho[:,0,:,:,:] = params.lambda_rho
+  else:
+    loss_func = UNet.loss_func
+    lambda_rho = params.lambda_rho
 
+  # capture the model
   graph, static_input, static_output, static_label, static_loss = capture_model(params, model, loss_func, lambda_rho, scaler,
                                                                                 capture_stream, device, num_warmup=20)
-
+  
+  # start training
   iters = 0
   startEpoch = 0
-  
+  params.lr_schedule['tot_steps'] = params.num_epochs*len(train_data_loader)
+
   if args.no_val:
     if world_rank==0:
       logging.info(model)
@@ -138,11 +154,11 @@ def train(params, args, world_rank):
       inp, tar = map(lambda x: x.to(device), data)
       tr_start = time.time()
       b_size = inp.size(0)
-
+      
       static_input.copy_(inp)
       static_label.copy_(tar)
       graph.replay()
-      
+
       if params.enable_amp:
         scaler.step(optimizer)
         scaler.update()
@@ -156,6 +172,7 @@ def train(params, args, world_rank):
   if world_rank==0: 
     logging.info("Starting Training Loop...")
 
+  iters = 0
   t1 = time.time()
   for epoch in range(startEpoch, startEpoch+params.num_epochs):
     start = time.time()
@@ -165,6 +182,7 @@ def train(params, args, world_rank):
     log_time = 0.
 
     model.train()
+    step_count = 0
     for i, data in enumerate(train_data_loader, 0):
       iters += 1
       dat_start = time.time()
@@ -172,6 +190,8 @@ def train(params, args, world_rank):
       tr_start = time.time()
       b_size = inp.size(0)
       
+      cosine_schedule(optimizer, iters, **params.lr_schedule)
+
       static_input.copy_(inp)
       static_label.copy_(tar)
       graph.replay()
@@ -180,26 +200,30 @@ def train(params, args, world_rank):
         scaler.step(optimizer)
         scaler.update()
       else:
-        optimizer.step()  
+        optimizer.step()
 
       tr_loss.append(static_loss.item())
+
       tr_end = time.time()
       tr_time += tr_end - tr_start
       dat_time += tr_start - dat_start
+      step_count += 1
 
     end = time.time()
     if world_rank==0:
-      logging.info('Time taken for epoch {} is {} sec, avg {} iters/sec'.format(epoch + 1, end-start, params.Nsamples/(end-start)))
+      logging.info('Time taken for epoch {} is {} sec, avg {} iters/sec'.format(epoch + 1, end-start, step_count/(end-start)))
       logging.info('  Step breakdown:')
-      logging.info('  Data to GPU: %.2f ms, U-Net fwd/back/optim: %.2f ms'%(1e3*dat_time/params.Nsamples, 1e3*tr_time/params.Nsamples))
+      logging.info('  Data to GPU: %.2f ms, U-Net fwd/back/optim: %.2f ms'%(1e3*dat_time/step_count, 1e3*tr_time/step_count))
       logging.info('  Avg train loss=%f'%np.mean(tr_loss))
       args.tboard_writer.add_scalar('Loss/train', np.mean(tr_loss), iters)
+      args.tboard_writer.add_scalar('Learning Rate', optimizer.param_groups[0]['lr'], iters)
+      args.tboard_writer.add_scalar('Avg iters per sec', len(train_data_loader)/(end-start), iters)
 
     val_start = time.time()
     val_loss = []
     model.eval()
     if not args.no_val and world_rank==0:
-      with torch.no_grad(): 
+      with torch.no_grad():
         for i, data in enumerate(val_data_loader, 0):
           with autocast(params.enable_amp):
             inp, tar = map(lambda x: x.to(device), data)
@@ -210,6 +234,7 @@ def train(params, args, world_rank):
       logging.info('  Avg val loss=%f'%np.mean(val_loss))
       logging.info('  Total validation time: {} sec'.format(val_end - val_start)) 
       args.tboard_writer.add_scalar('Loss/valid', np.mean(val_loss), iters)
+      args.tboard_writer.flush()
 
   t2 = time.time()
   tottime = t2 - t1
@@ -221,32 +246,43 @@ def train(params, args, world_rank):
 if __name__ == '__main__':
 
   parser = argparse.ArgumentParser()
-  parser.add_argument("--local_rank", default=0, type=int)
   parser.add_argument("--run_num", default='00', type=str)
   parser.add_argument("--yaml_config", default='./config/UNet.yaml', type=str)
   parser.add_argument("--config", default='base', type=str)
   parser.add_argument("--no_val", action='store_true', help='skip validation steps (for profiling train only)')
+  parser.add_argument("--enable_amp", action='store_true', help='enable automatic mixed precision')
+  parser.add_argument("--enable_apex", action='store_true', help='enable apex fused Adam optimizer')
+  parser.add_argument("--enable_jit", action='store_true', help='enable JIT compilation')
+  parser.add_argument("--enable_benchy", action='store_true', help='enable benchy tool usage')
+  parser.add_argument("--data_loader_config", default=None, type=str,
+                      choices=['synthetic', 'inmem', 'lowmem', 'dali-lowmem'],
+                      help="dataloader configuration. choices: 'synthetic', 'inmem', 'lowmem', 'dali-lowmem'")
   args = parser.parse_args()
   
   run_num = args.run_num
 
   params = YParams(os.path.abspath(args.yaml_config), args.config)
 
+  # Update config with modified args
+  params.update({"enable_amp" : args.enable_amp,
+                 "enable_apex" : args.enable_apex,
+                 "enable_jit" : args.enable_jit,
+                 "enable_benchy" : args.enable_benchy})
+
+  if args.data_loader_config:
+      params.update({"data_loader_config" : args.data_loader_config})
+
   params.distributed = False
   if 'WORLD_SIZE' in os.environ:
     params.distributed = int(os.environ['WORLD_SIZE']) > 1
 
   world_rank = 0
+  local_rank = 0
   if params.distributed:
-    torch.cuda.set_device(args.local_rank)
     torch.distributed.init_process_group(backend='nccl',
                                          init_method='env://')
-    args.gpu = args.local_rank
-    world_rank = torch.distributed.get_rank()
-  else:
-    torch.cuda.set_device(0)
-
-  torch.backends.cudnn.benchmark = True
+    world_rank = torch.distributed.get_rank() 
+    local_rank = int(os.environ['LOCAL_RANK'])
 
   # Set up directory
   baseDir = params.expdir
@@ -260,6 +296,8 @@ if __name__ == '__main__':
 
   params.experiment_dir = os.path.abspath(expDir)
 
-  train(params, args, world_rank)
+  train(params, args, local_rank, world_rank)
+  if params.distributed:
+    torch.distributed.barrier()
   logging.info('DONE ---- rank %d'%world_rank)
 
