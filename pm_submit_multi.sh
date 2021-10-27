@@ -9,7 +9,7 @@
 #SBATCH -o %x-%j.out
 
 DATADIR=/pscratch/sd/j/joshr/nbody2hydro/datacopies
-LOGDIR=/pscratch/sd/j/joshr/ampUNet/logs
+LOGDIR=${WORK}/ampUNet/logs
 
 hostname
 
@@ -19,6 +19,6 @@ srun -u shifter --image=romerojosh/containers:sc21_tutorial --module=gpu \
     -V ${DATADIR}:/data -V ${LOGDIR}:/logs \
     bash -c '
     source export_DDP_vars.sh
-    python train.py --config=A100_crop64_8GPU --data_loader_config dali-lowmem
+    python train.py --config=A100_crop64_8GPU --data_loader_config inmem #dali-lowmem
     '
 

@@ -67,12 +67,15 @@ def train(params, args, local_rank, world_rank):
     model_handle = torch.jit.script(model_handle)  
 
   # select loss function
-  #loss_func = UNet.loss_func_opt
-  #lambda_rho = params.lambda_rho
-  loss_func = UNet.loss_func_opt_final
-  lambda_rho = torch.zeros((1,5,1,1,1), dtype=torch.float32).to(device)
-  lambda_rho[:,0,:,:,:] = params.lambda_rho
-    
+  if params.enable_jit:
+    loss_func = UNet.loss_func_opt_final
+    lambda_rho = torch.zeros((1,5,1,1,1), dtype=torch.float32).to(device)
+    lambda_rho[:,0,:,:,:] = params.lambda_rho
+  else:
+    loss_func = UNet.loss_func
+    lambda_rho = params.lambda_rho
+
+  # start training
   iters = 0
   startEpoch = 0
   params.lr_schedule['tot_steps'] = params.num_epochs*len(train_data_loader)

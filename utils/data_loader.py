@@ -88,7 +88,7 @@ class RandomCropDataset(Dataset):
         self.inp_buff = np.zeros((4, self.size, self.size, self.size), dtype=np.float32)
         self.tar_buff = np.zeros((5, self.size, self.size, self.size), dtype=np.float32)
         if self.inmem:
-            with h5py.File(fname, 'r') as f:
+            with h5py.File(self.fname, 'r') as f:
                 self.Hydro = f['Hydro'][...]
                 self.Nbody = f['Nbody'][...]
         else:

@@ -9,7 +9,7 @@
 #SBATCH -o %x-%j.out
 
 DATADIR=/pscratch/sd/j/joshr/nbody2hydro/datacopies
-LOGDIR=/pscratch/sd/j/joshr/ampUNet/logs
+LOGDIR=${WORK}/ampUNet/logs
 
 hostname
 
