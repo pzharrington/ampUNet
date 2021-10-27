@@ -10,7 +10,7 @@ def worker_init(wrk_id):
     np.random.seed(torch.utils.data.get_worker_info().seed%(2**32 - 1))
 
 
-def get_data_loader_distributed(params, world_rank):
+def get_data_loader_distributed(params, world_rank, device=0):
 
     if params.data_loader_config == 'synthetic':
         train_data =  RandomJunkDataset(params)

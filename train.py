@@ -30,12 +30,17 @@ def cosine_schedule(optimizer, iternum, start_lr=1e-4, tot_steps=1000, end_lr=0.
 
 
 def train(params, args, local_rank, world_rank):
-  logging.info('rank %d, begin data loader init'%world_rank)
-  train_data_loader, val_data_loader = get_data_loader_distributed(params, world_rank)
-  logging.info('rank %d, data loader initialized with config %s'%(world_rank, params.data_loader_config))
-
+  # set device and benchmark mode
+  torch.backends.cudnn.benchmark = True
+  torch.cuda.set_device(local_rank)
   device = torch.device('cuda:%d'%local_rank)
 
+  # get data loader
+  logging.info('rank %d, begin data loader init'%world_rank)
+  train_data_loader, val_data_loader = get_data_loader_distributed(params, world_rank, device.index)
+  logging.info('rank %d, data loader initialized with config %s'%(world_rank, params.data_loader_config))
+
+  # create model
   model = UNet.UNet(params).to(device)
   model.apply(model.get_weights_function(params.weight_init))
   
@@ -217,11 +222,6 @@ if __name__ == '__main__':
                                          init_method='env://')
     world_rank = torch.distributed.get_rank() 
     local_rank = int(os.environ['LOCAL_RANK'])
-    torch.cuda.set_device(local_rank)
-  else:
-    torch.cuda.set_device(local_rank)
-
-  torch.backends.cudnn.benchmark = True
 
   # Set up directory
   baseDir = params.expdir
